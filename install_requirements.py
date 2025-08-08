@@ -1,31 +1,20 @@
-import sys
+# install_requirements.py
 import subprocess
-import importlib.metadata
-
-REQUIRED_PACKAGES = [
-    "opencv-python",
-    "numpy",
-    "pillow"
-]
-
-def install_package(package):
-    """
-    Install a single package using pip.
-    """
-    print(f"Installing missing package: {package}")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+import sys
+import os
 
 def ensure_dependencies():
     """
-    Ensure all required packages are installed.
-    Returns True if any packages were installed, otherwise False.
+    Installs all dependencies listed in requirements.txt if they are not already installed.
     """
-    installed_any = False
-    for package in REQUIRED_PACKAGES:
-        try:
-            importlib.metadata.version(package)
-            print(f"Package {package} was found; no need to install!")
-        except importlib.metadata.PackageNotFoundError:
-            install_package(package)
-            installed_any = True
-    return installed_any
+    requirements_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
+    if not os.path.exists(requirements_file):
+        print("requirements.txt not found. No dependencies installed.")
+        return
+
+    try:
+        print("Installing requirements.txt packages...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing requirements: {e}")
+        sys.exit(1)
