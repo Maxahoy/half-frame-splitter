@@ -3,53 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Half-Frame Splitter</title>
+    <title>AI Half-Frame Splitter Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script async src="https://docs.opencv.org/4.5.4/opencv.js" id="opencv-script"></script>
     <style>
-        :root { --primary: #2563eb; --bg: #f8fafc; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 2rem; color: #1e293b; line-height: 1.5; }
+        :root { --primary: #2563eb; --bg: #f8fafc; --text: #1e293b; --card-bg: white; --border: #e2e8f0; }
+        body.dark { --bg: #0f172a; --text: #f8fafc; --card-bg: #1e293b; --border: #334155; }
+        
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 2rem; color: var(--text); line-height: 1.5; transition: background 0.3s; }
         .container { max-width: 1100px; margin: 0 auto; }
-        .status-bar { background: #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; border-left: 5px solid #94a3b8; }
-        .controls { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 2rem; display: flex; gap: 25px; align-items: flex-end; flex-wrap: wrap; }
+        .status-bar { background: #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; border-left: 5px solid #94a3b8; color: #1e293b; }
+        body.dark .status-bar { background: #334155; color: white; }
+
+        .controls { background: var(--card-bg); padding: 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap; border: 1px solid var(--border); }
         .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
-        .card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
-        .preview-container { position: relative; width: 100%; aspect-ratio: 3/2; background: #111; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-top: 10px; border-radius: 4px; }
-        canvas { max-width: 100%; max-height: 100%; }
-        .btn { background: var(--primary); color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
-        .btn:disabled { background: #cbd5e1; cursor: not-allowed; }
-        .btn-alt { background: #0f172a; }
+        .card { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--border); transition: border-color 0.2s; }
+        .card:hover { border-color: var(--primary); }
+        
+        .preview-container { position: relative; width: 100%; aspect-ratio: 3/2; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: 1px solid var(--border); }
+        canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+
+        .btn { background: var(--primary); color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-alt { background: #64748b; }
+        .btn-dark { background: #475569; }
+
         .slider-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: #64748b; }
+        label { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text); opacity: 0.8; }
+        input[type="range"] { cursor: pointer; }
     </style>
 </head>
-<body>
+<body class="dark">
 
 <div class="container">
-    <h1>🎞️ Half-Frame AI Splitter</h1>
-    <div id="status" class="status-bar">⌛ Loading Computer Vision Engine...</div>
+    <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h1 style="margin:0;">🎞️ AI Half-Frame Splitter</h1>
+        <button class="btn btn-dark" onclick="document.body.classList.toggle('dark')">🌗 Toggle Theme</button>
+    </div>
+    
+    <div id="status" class="status-bar">⌛ Initializing Engine...</div>
 
     <div class="controls">
         <div class="slider-group">
-            <label>1. Upload Scans</label>
-            <input type="file" id="fileInput" multiple accept="image/*" disabled>
+            <label>1. Upload Folder</label>
+            <input type="file" id="fileInput" webkitdirectory directory multiple disabled>
         </div>
         <div class="slider-group">
             <label>2. Global Sensitivity: <span id="sensVal">45</span></label>
-            <input type="range" id="sensitivity" min="5" max="200" value="45">
+            <input type="range" id="sensitivity" min="5" max="250" value="45">
         </div>
-        <div style="display: flex; gap: 10px;">
-            <button class="btn btn-alt" id="globalSyncBtn" disabled>🔄 Sync All</button>
-            <button class="btn" style="background: #ef4444;" id="resetBtn">🗑️ Reset</button>
-            <button class="btn" id="downloadAll" disabled>📥 Download (.ZIP)</button>
-        </div>
+        <button class="btn btn-alt" id="globalSyncBtn" disabled>🔄 Sync All</button>
+        <button class="btn" style="background: #ef4444;" id="resetBtn">🗑️ Reset All</button>
+        <button class="btn" id="downloadAll" disabled>📥 Download ZIP</button>
     </div>
 
     <div id="gallery" class="gallery"></div>
 </div>
 
 <script>
-let originalImages = []; 
+    let originalImages = []; 
+    let activeCardId = null;
+    let currentSessionId = 0;
+    let currentFolderName = "half_frame_export";
+
     const status = document.getElementById('status');
     const fileInput = document.getElementById('fileInput');
     const gallery = document.getElementById('gallery');
@@ -66,51 +82,91 @@ let originalImages = [];
     };
 
     function onCvReady() {
-        status.innerText = "✅ Ready. Manual overrides will lock the center position.";
-        status.style.background = "#dcfce7";
+        status.innerText = "✅ Ready. Folder upload enabled (Images only).";
+        status.style.background = "#065f46"; status.style.color = "white";
         fileInput.disabled = false;
     }
 
     // --- RESET ---
     resetBtn.onclick = () => {
+        currentSessionId++; 
         originalImages = [];
         gallery.innerHTML = '';
         fileInput.value = '';
-        globalSyncBtn.disabled = true;
-        downloadBtn.disabled = true;
-        status.innerText = "Cleared. Upload new scans to begin.";
+        currentFolderName = "half_frame_export";
+        globalSyncBtn.disabled = downloadBtn.disabled = true;
+        status.innerText = "Cleared. Ready for new folder.";
+        status.style.background = "#334155";
     };
 
-    // --- UPLOAD HANDLER ---
+    // --- KEYBOARD LISTENER ---
+    window.addEventListener('keydown', (e) => {
+        if (!activeCardId) return;
+        const item = originalImages.find(i => i.id === activeCardId);
+        if (!item) return;
+
+        if (e.key === 'ArrowRight') {
+            item.threshold = Math.min(250, item.threshold + 1);
+            updateLogic(item);
+        } else if (e.key === 'ArrowLeft') {
+            item.threshold = Math.max(5, item.threshold - 1);
+            updateLogic(item);
+        }
+    });
+
+    function updateLogic(item) {
+        item.isOverridden = true;
+        const res = autoDetectGutter(item.img, item.threshold, item.isCenterManuallySet ? item.centerX : null);
+        item.centerX = res.centerX;
+        item.gutterWidth = res.gutterWidth;
+        item.refreshUI();
+    }
+
+    // --- UPLOAD HANDLER (WITH IMPROVED FILTERING) ---
     fileInput.addEventListener('change', async (e) => {
-        const files = Array.from(e.target.files);
-        if (files.length === 0) return;
+        const thisSessionId = ++currentSessionId;
         
-        status.innerText = "⌛ Processing Gallery...";
-        const globalThreshold = parseInt(sensInput.value);
+        // Filter: Must be an image MIME type OR have an image extension
+        const files = Array.from(e.target.files).filter(file => {
+            const isImgMime = file.type.startsWith('image/');
+            const isImgExt = /\.(jpe?g|png|webp|tiff?|bmp)$/i.test(file.name);
+            return isImgMime || isImgExt;
+        });
+
+        if (files.length === 0) {
+            status.innerText = "⚠️ No valid images found in that selection.";
+            return;
+        }
+        
+        if (files[0].webkitRelativePath) {
+            currentFolderName = files[0].webkitRelativePath.split('/')[0];
+        }
+
+        const globalVal = parseInt(sensInput.value);
+        let count = 0;
 
         for (const file of files) {
+            if (thisSessionId !== currentSessionId) return;
+            
+            count++;
+            status.innerText = `⌛ Analyzing ${count} of ${files.length} images...`;
+
             const img = await loadImage(file);
-            const res = autoDetectGutter(img, globalThreshold);
+            const res = autoDetectGutter(img, globalVal);
             
             const item = {
                 id: Math.random().toString(36).substr(2, 9),
-                img: img,
-                name: file.name,
-                threshold: globalThreshold,
-                centerX: res.centerX,
-                gutterWidth: res.gutterWidth,
-                isOverridden: false,
-                isCenterManuallySet: false // NEW FLAG
+                img, name: file.name, threshold: globalVal,
+                centerX: res.centerX, gutterWidth: res.gutterWidth,
+                isOverridden: false, isCenterManuallySet: false
             };
             
             originalImages.push(item);
             renderCard(item);
         }
         
-        globalSyncBtn.disabled = false;
-        downloadBtn.disabled = false;
-        status.innerText = `✅ Loaded ${originalImages.length} images.`;
+        globalSyncBtn.disabled = downloadBtn.disabled = false;
+        status.innerText = `✅ Successfully loaded ${originalImages.length} images from "${currentFolderName}"`;
     });
 
     globalSyncBtn.onclick = () => {
@@ -118,7 +174,6 @@ let originalImages = [];
         originalImages.forEach(item => {
             if (!item.isOverridden) {
                 item.threshold = globalVal;
-                // If not overridden, we run a full fresh detection
                 const res = autoDetectGutter(item.img, globalVal);
                 item.centerX = res.centerX;
                 item.gutterWidth = res.gutterWidth;
@@ -129,142 +184,92 @@ let originalImages = [];
 
     sensInput.oninput = (e) => sensVal.innerText = e.target.value;
 
-    // --- CLICK HANDLER ---
-    window.handleManualClick = (event, id) => {
-        const item = originalImages.find(i => i.id === id);
-        const rect = event.target.getBoundingClientRect();
-        const scaleX = item.img.width / rect.width;
-        const clickedX = (event.offsetX) * scaleX;
-
-        item.centerX = clickedX;
-        item.isOverridden = true;
-        item.isCenterManuallySet = true; // Lock the X coordinate
-        item.refreshUI();
-    };
-
-    // --- UI RENDERING ---
     function renderCard(item) {
         const card = document.createElement('div');
         card.className = 'card';
-        card.id = `card-${item.id}`;
+        card.onmouseenter = () => activeCardId = item.id;
+        card.onmouseleave = () => activeCardId = null;
         gallery.appendChild(card);
 
         item.refreshUI = () => {
-            card.innerHTML = '';
-            const header = document.createElement('div');
-            header.style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;";
-            header.innerHTML = `
-                <strong style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:180px;">${item.name}</strong>
-                <label style="font-size:10px; color:${item.isOverridden ? '#b45309' : '#64748b'}">
-                    <input type="checkbox" ${item.isOverridden ? 'checked' : ''} id="check-${item.id}"> LOCKED
-                </label>
-            `;
-            card.appendChild(header);
-
-            const pContainer = document.createElement('div');
-            pContainer.className = 'preview-container';
-            const canvas = document.createElement('canvas');
-            canvas.style.cursor = "crosshair";
-            canvas.width = item.img.width;
-            canvas.height = item.img.height;
-            pContainer.appendChild(canvas);
-            card.appendChild(pContainer);
-
-            const ctrlArea = document.createElement('div');
-            ctrlArea.style = `margin-top:10px; background:${item.isOverridden ? '#fefce8' : '#f8fafc'}; padding:8px; border-radius:4px; border: 1px solid ${item.isOverridden ? '#fde047' : '#e2e8f0'}`;
-            ctrlArea.innerHTML = `
-                <label style="font-size:10px;">Sensitivity: <b>${item.threshold}</b></label>
-                <input type="range" style="width:100%" min="5" max="200" value="${item.threshold}" id="slide-${item.id}">
-                <div style="font-size:9px; color:#94a3b8; margin-top:4px; text-align:center;">
-                    ${item.isCenterManuallySet ? '📍 Center Locked' : 'Click image to manual split'}
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <strong style="font-size:10px; width:70%; overflow:hidden; white-space:nowrap;">${item.name}</strong>
+                    <label style="font-size:9px; color:${item.isOverridden ? '#fbbf24' : 'inherit'}">
+                        <input type="checkbox" ${item.isOverridden ? 'checked' : ''} id="lock-${item.id}"> LOCK
+                    </label>
+                </div>
+                <div class="preview-container"><canvas id="c-${item.id}" style="cursor:crosshair;"></canvas></div>
+                <div style="margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.1); border: 1px solid var(--border);">
+                    <label style="font-size:9px;">Sensitivity: <b>${item.threshold}</b></label>
+                    <input type="range" style="width:100%" min="5" max="250" value="${item.threshold}" id="s-${item.id}">
                 </div>
             `;
-            card.appendChild(ctrlArea);
 
-            canvas.onclick = (e) => handleManualClick(e, item.id);
-            
-            card.querySelector(`#check-${item.id}`).onchange = (e) => {
-                item.isOverridden = e.target.checked;
-                if (!item.isOverridden) item.isCenterManuallySet = false;
-                item.refreshUI();
-            };
-
-            card.querySelector(`#slide-${item.id}`).oninput = (e) => {
-                item.threshold = parseInt(e.target.value);
-                item.isOverridden = true;
-                
-                // Pass current center if manually set to detect width only
-                const res = autoDetectGutter(item.img, item.threshold, item.isCenterManuallySet ? item.centerX : null);
-                
-                item.centerX = res.centerX;
-                item.gutterWidth = res.gutterWidth;
-                item.refreshUI();
-            };
-
+            const canvas = card.querySelector(`#c-${item.id}`);
+            canvas.width = item.img.width; canvas.height = item.img.height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(item.img, 0, 0);
+            
             ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
             ctx.fillRect(item.centerX - (item.gutterWidth/2), 0, item.gutterWidth, item.img.height);
-            ctx.strokeStyle = item.isOverridden ? "#eab308" : "#06b6d4";
-            ctx.lineWidth = Math.max(12, item.img.width / 150);
+            
+            ctx.strokeStyle = item.isOverridden ? "#fbbf24" : "#22d3ee";
+            ctx.lineWidth = Math.max(15, item.img.width / 120);
             ctx.beginPath(); ctx.moveTo(item.centerX, 0); ctx.lineTo(item.centerX, item.img.height); ctx.stroke();
-        };
 
+            canvas.onclick = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                item.centerX = (e.offsetX) * (item.img.width / rect.width);
+                item.isOverridden = item.isCenterManuallySet = true;
+                item.refreshUI();
+            };
+            
+            card.querySelector(`#lock-${item.id}`).onchange = (e) => {
+                item.isOverridden = e.target.checked;
+                if(!item.isOverridden) item.isCenterManuallySet = false;
+                item.refreshUI();
+            };
+            
+            card.querySelector(`#s-${item.id}`).oninput = (e) => {
+                item.threshold = parseInt(e.target.value);
+                updateLogic(item);
+            };
+        };
         item.refreshUI();
     }
 
-    // --- UPDATED AI HELPER ---
-    function autoDetectGutter(img, threshVal, lockedCenterX = null) {
-        let centerX = lockedCenterX !== null ? lockedCenterX : img.width / 2;
+    function autoDetectGutter(img, threshVal, lockedX = null) {
+        let centerX = lockedX !== null ? lockedX : img.width / 2;
         let gutterWidth = 0;
-
         try {
             let src = cv.imread(img);
             let gray = new cv.Mat();
             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-            
-            // Focus scanning on a local region around center
-            let scanWidth = img.width * 0.2;
-            let startX = lockedCenterX !== null ? (lockedCenterX - (scanWidth/2)) : (img.width * 0.4);
-            startX = Math.max(0, Math.min(startX, img.width - scanWidth));
-
-            let rect = new cv.Rect(startX, 0, scanWidth, img.height);
-            let roi = gray.roi(rect);
+            let scanW = img.width * 0.2;
+            let startX = Math.max(0, Math.min((lockedX || img.width * 0.5) - (scanW/2), img.width - scanW));
+            let roi = gray.roi(new cv.Rect(startX, 0, scanW, img.height));
             cv.threshold(roi, roi, threshVal, 255, cv.THRESH_BINARY_INV);
-
             let colSums = [];
             for (let x = 0; x < roi.cols; x++) {
                 let sum = 0;
                 for (let y = 0; y < roi.rows; y++) { if (roi.ucharAt(y, x) === 255) sum++; }
                 colSums.push(sum / roi.rows);
             }
-
-            let startIdx = -1, endIdx = -1, maxRange = 0, currentStart = -1;
+            let sIdx = -1, eIdx = -1, maxR = 0, curS = -1;
             for(let i=0; i < colSums.length; i++) {
-                if(colSums[i] > 0.6) { if(currentStart === -1) currentStart = i; }
-                else {
-                    if(currentStart !== -1) {
-                        if((i - currentStart) > maxRange) { startIdx = currentStart; endIdx = i; maxRange = i - currentStart; }
-                        currentStart = -1;
-                    }
-                }
+                if(colSums[i] > 0.6) { if(curS === -1) curS = i; }
+                else { if(curS !== -1) { if((i-curS) > maxR){ sIdx=curS; eIdx=i; maxR=i-curS; } curS=-1; } }
             }
-
-            if (startIdx !== -1) {
-                // If center isn't locked, update the global center based on the strip found
-                if (lockedCenterX === null) {
-                    centerX = startX + ((startIdx + endIdx) / 2);
-                }
-                gutterWidth = (endIdx - startIdx) + 4;
+            if (sIdx !== -1) {
+                if (lockedX === null) centerX = startX + ((sIdx + eIdx) / 2);
+                gutterWidth = (eIdx - sIdx) + 4;
             }
-
             src.delete(); gray.delete(); roi.delete();
         } catch (e) { console.warn(e); }
-        
         return { centerX, gutterWidth };
     }
 
-    // --- ZIP & IMAGE HELPERS ---
     function loadImage(file) {
         return new Promise(res => {
             const r = new FileReader();
@@ -275,7 +280,7 @@ let originalImages = [];
 
     downloadBtn.onclick = async () => {
         const zip = new JSZip();
-        status.innerText = "📦 Creating high-res crops...";
+        status.innerText = `📦 Exporting ${currentFolderName}_SPLIT.zip...`;
         for (const item of originalImages) {
             await addHalfToZip(zip, item.img, 0, item.centerX - (item.gutterWidth/2), `${item.name.split('.')[0]}_A.jpg`);
             await addHalfToZip(zip, item.img, item.centerX + (item.gutterWidth/2), item.img.width - (item.centerX + (item.gutterWidth/2)), `${item.name.split('.')[0]}_B.jpg`);
@@ -283,9 +288,9 @@ let originalImages = [];
         const content = await zip.generateAsync({type: "blob"});
         const link = document.createElement('a');
         link.href = URL.createObjectURL(content);
-        link.download = "half_frame_split.zip";
+        link.download = `${currentFolderName}_SPLIT.zip`;
         link.click();
-        status.innerText = "✅ Download ready!";
+        status.innerText = "✅ ZIP Exported!";
     };
 
     function addHalfToZip(zip, img, x, w, filename) {
@@ -293,7 +298,7 @@ let originalImages = [];
             const c = document.createElement('canvas');
             c.width = w; c.height = img.height;
             c.getContext('2d').drawImage(img, x, 0, w, img.height, 0, 0, w, img.height);
-            c.toBlob(b => { zip.file(filename, b); resolve(); }, 'image/jpeg', 0.95);
+            c.toBlob(b => { zip.file(filename, b); resolve(); }, 'image/jpeg', 0.98);
         });
     }
 </script>
