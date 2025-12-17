@@ -21,16 +21,16 @@
         .card:hover { border-color: var(--primary); }
         
         .preview-container { position: relative; width: 100%; aspect-ratio: 3/2; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: 1px solid var(--border); }
-        canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+        canvas { max-width: 100%; max-height: 100%; image-rendering: auto; }
 
         .btn { background: var(--primary); color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
         .btn:disabled { background: #94a3b8; cursor: not-allowed; }
         .btn-alt { background: #64748b; }
         .btn-dark { background: #475569; }
+        .rotate-btn { background: #475569; color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 10px; cursor: pointer; margin-left: 5px; }
 
         .slider-group { display: flex; flex-direction: column; gap: 8px; }
         label { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text); opacity: 0.8; }
-        input[type="range"] { cursor: pointer; }
     </style>
 </head>
 <body class="dark">
@@ -41,7 +41,7 @@
         <button class="btn btn-dark" onclick="document.body.classList.toggle('dark')">🌗 Toggle Theme</button>
     </div>
     
-    <div id="status" class="status-bar">⌛ Initializing Engine...</div>
+    <div id="status" class="status-bar">⌛ Loading Engine...</div>
 
     <div class="controls">
         <div class="slider-group">
@@ -53,7 +53,7 @@
             <input type="range" id="sensitivity" min="5" max="250" value="45">
         </div>
         <button class="btn btn-alt" id="globalSyncBtn" disabled>🔄 Sync All</button>
-        <button class="btn" style="background: #ef4444;" id="resetBtn">🗑️ Reset All</button>
+        <button class="btn" style="background: #ef4444;" onclick="location.reload()">🗑️ Reset All</button>
         <button class="btn" id="downloadAll" disabled>📥 Download ZIP</button>
     </div>
 
@@ -71,102 +71,62 @@
     const gallery = document.getElementById('gallery');
     const downloadBtn = document.getElementById('downloadAll');
     const globalSyncBtn = document.getElementById('globalSyncBtn');
-    const resetBtn = document.getElementById('resetBtn');
     const sensInput = document.getElementById('sensitivity');
     const sensVal = document.getElementById('sensVal');
 
-    // --- OPENCV LOAD ---
     document.getElementById('opencv-script').onload = () => {
         if (typeof cv !== 'undefined' && cv.runtimeInitialized) { onCvReady(); } 
         else { cv.onRuntimeInitialized = onCvReady; }
     };
 
     function onCvReady() {
-        status.innerText = "✅ Ready. Folder upload enabled (Images only).";
+        status.innerText = "✅ Ready.";
         status.style.background = "#065f46"; status.style.color = "white";
         fileInput.disabled = false;
     }
 
-    // --- RESET ---
-    resetBtn.onclick = () => {
-        currentSessionId++; 
-        originalImages = [];
-        gallery.innerHTML = '';
-        fileInput.value = '';
-        currentFolderName = "half_frame_export";
-        globalSyncBtn.disabled = downloadBtn.disabled = true;
-        status.innerText = "Cleared. Ready for new folder.";
-        status.style.background = "#334155";
-    };
-
-    // --- KEYBOARD LISTENER ---
     window.addEventListener('keydown', (e) => {
         if (!activeCardId) return;
         const item = originalImages.find(i => i.id === activeCardId);
         if (!item) return;
-
         if (e.key === 'ArrowRight') {
             item.threshold = Math.min(250, item.threshold + 1);
-            updateLogic(item);
+            runDetectionOnItem(item);
         } else if (e.key === 'ArrowLeft') {
             item.threshold = Math.max(5, item.threshold - 1);
-            updateLogic(item);
+            runDetectionOnItem(item);
         }
     });
 
-    function updateLogic(item) {
-        item.isOverridden = true;
-        const res = autoDetectGutter(item.img, item.threshold, item.isCenterManuallySet ? item.centerX : null);
-        item.centerX = res.centerX;
-        item.gutterWidth = res.gutterWidth;
-        item.refreshUI();
-    }
-
-    // --- UPLOAD HANDLER (WITH IMPROVED FILTERING) ---
     fileInput.addEventListener('change', async (e) => {
         const thisSessionId = ++currentSessionId;
+        const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp)$/i.test(f.name));
+        if (files.length === 0) return;
         
-        // Filter: Must be an image MIME type OR have an image extension
-        const files = Array.from(e.target.files).filter(file => {
-            const isImgMime = file.type.startsWith('image/');
-            const isImgExt = /\.(jpe?g|png|webp|tiff?|bmp)$/i.test(file.name);
-            return isImgMime || isImgExt;
-        });
-
-        if (files.length === 0) {
-            status.innerText = "⚠️ No valid images found in that selection.";
-            return;
-        }
-        
-        if (files[0].webkitRelativePath) {
-            currentFolderName = files[0].webkitRelativePath.split('/')[0];
-        }
+        if (files[0].webkitRelativePath) { currentFolderName = files[0].webkitRelativePath.split('/')[0]; }
 
         const globalVal = parseInt(sensInput.value);
         let count = 0;
 
         for (const file of files) {
             if (thisSessionId !== currentSessionId) return;
-            
             count++;
-            status.innerText = `⌛ Analyzing ${count} of ${files.length} images...`;
+            status.innerText = `⌛ Analyzing ${count} of ${files.length}...`;
 
             const img = await loadImage(file);
-            const res = autoDetectGutter(img, globalVal);
-            
             const item = {
                 id: Math.random().toString(36).substr(2, 9),
                 img, name: file.name, threshold: globalVal,
-                centerX: res.centerX, gutterWidth: res.gutterWidth,
+                rotation: 0, centerX: 0, gutterWidth: 0,
                 isOverridden: false, isCenterManuallySet: false
             };
             
             originalImages.push(item);
             renderCard(item);
+            runDetectionOnItem(item); 
         }
-        
         globalSyncBtn.disabled = downloadBtn.disabled = false;
-        status.innerText = `✅ Successfully loaded ${originalImages.length} images from "${currentFolderName}"`;
+        status.innerText = `✅ Loaded ${originalImages.length} images from "${currentFolderName}"`;
     });
 
     globalSyncBtn.onclick = () => {
@@ -174,32 +134,52 @@
         originalImages.forEach(item => {
             if (!item.isOverridden) {
                 item.threshold = globalVal;
-                const res = autoDetectGutter(item.img, globalVal);
-                item.centerX = res.centerX;
-                item.gutterWidth = res.gutterWidth;
-                item.refreshUI();
+                runDetectionOnItem(item);
             }
         });
     };
 
     sensInput.oninput = (e) => sensVal.innerText = e.target.value;
 
+    function runDetectionOnItem(item) {
+        // We detect from the current rendered state of the card's canvas
+        const canvas = document.getElementById(`c-${item.id}`);
+        if (!canvas) return;
+        const res = autoDetectGutterFromCanvas(canvas, item.threshold, item.isCenterManuallySet ? item.centerX : null);
+        item.centerX = res.centerX;
+        item.gutterWidth = res.gutterWidth;
+        item.refreshUI();
+    }
+
     function renderCard(item) {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.onmouseenter = () => activeCardId = item.id;
-        card.onmouseleave = () => activeCardId = null;
-        gallery.appendChild(card);
+        let card = document.getElementById(`card-${item.id}`);
+        if (!card) {
+            card = document.createElement('div');
+            card.className = 'card';
+            card.id = `card-${item.id}`;
+            card.onmouseenter = () => activeCardId = item.id;
+            card.onmouseleave = () => activeCardId = null;
+            gallery.appendChild(card);
+        }
 
         item.refreshUI = () => {
+            const isVertical = item.rotation % 180 !== 0;
+            const displayWidth = isVertical ? item.img.height : item.img.width;
+            const displayHeight = isVertical ? item.img.width : item.img.height;
+
             card.innerHTML = `
-                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <strong style="font-size:10px; width:70%; overflow:hidden; white-space:nowrap;">${item.name}</strong>
-                    <label style="font-size:9px; color:${item.isOverridden ? '#fbbf24' : 'inherit'}">
-                        <input type="checkbox" ${item.isOverridden ? 'checked' : ''} id="lock-${item.id}"> LOCK
-                    </label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <div style="width:70%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+                        <strong style="font-size:10px;">${item.name}</strong>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <button class="rotate-btn" id="rot-${item.id}">🔄</button>
+                        <label style="font-size:9px; color:${item.isOverridden ? '#fbbf24' : 'inherit'}">
+                            <input type="checkbox" ${item.isOverridden ? 'checked' : ''} id="lock-${item.id}"> LOCK
+                        </label>
+                    </div>
                 </div>
-                <div class="preview-container"><canvas id="c-${item.id}" style="cursor:crosshair;"></canvas></div>
+                <div class="preview-container"><canvas id="c-${item.id}"></canvas></div>
                 <div style="margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.1); border: 1px solid var(--border);">
                     <label style="font-size:9px;">Sensitivity: <b>${item.threshold}</b></label>
                     <input type="range" style="width:100%" min="5" max="250" value="${item.threshold}" id="s-${item.id}">
@@ -207,48 +187,59 @@
             `;
 
             const canvas = card.querySelector(`#c-${item.id}`);
-            canvas.width = item.img.width; canvas.height = item.img.height;
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(item.img, 0, 0);
+            
+            ctx.save();
+            ctx.translate(canvas.width/2, canvas.height/2);
+            ctx.rotate((item.rotation * Math.PI) / 180);
+            ctx.drawImage(item.img, -item.img.width/2, -item.img.height/2);
+            ctx.restore();
             
             ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
-            ctx.fillRect(item.centerX - (item.gutterWidth/2), 0, item.gutterWidth, item.img.height);
-            
+            ctx.fillRect(item.centerX - (item.gutterWidth/2), 0, item.gutterWidth, canvas.height);
             ctx.strokeStyle = item.isOverridden ? "#fbbf24" : "#22d3ee";
-            ctx.lineWidth = Math.max(15, item.img.width / 120);
-            ctx.beginPath(); ctx.moveTo(item.centerX, 0); ctx.lineTo(item.centerX, item.img.height); ctx.stroke();
+            ctx.lineWidth = Math.max(15, canvas.width / 120);
+            ctx.beginPath(); ctx.moveTo(item.centerX, 0); ctx.lineTo(item.centerX, canvas.height); ctx.stroke();
 
             canvas.onclick = (e) => {
                 const rect = canvas.getBoundingClientRect();
-                item.centerX = (e.offsetX) * (item.img.width / rect.width);
+                item.centerX = (e.offsetX) * (canvas.width / rect.width);
                 item.isOverridden = item.isCenterManuallySet = true;
                 item.refreshUI();
             };
-            
             card.querySelector(`#lock-${item.id}`).onchange = (e) => {
                 item.isOverridden = e.target.checked;
                 if(!item.isOverridden) item.isCenterManuallySet = false;
                 item.refreshUI();
             };
-            
             card.querySelector(`#s-${item.id}`).oninput = (e) => {
                 item.threshold = parseInt(e.target.value);
-                updateLogic(item);
+                item.isOverridden = true;
+                runDetectionOnItem(item);
+            };
+            card.querySelector(`#rot-${item.id}`).onclick = () => {
+                item.rotation = (item.rotation + 90) % 360;
+                item.isCenterManuallySet = false; // Reset center on rotate
+                item.isOverridden = true;
+                // Timeout ensures the canvas reflows before we scan it
+                setTimeout(() => runDetectionOnItem(item), 10); 
             };
         };
         item.refreshUI();
     }
 
-    function autoDetectGutter(img, threshVal, lockedX = null) {
-        let centerX = lockedX !== null ? lockedX : img.width / 2;
+    function autoDetectGutterFromCanvas(canvas, threshVal, lockedX = null) {
+        let centerX = lockedX !== null ? lockedX : canvas.width / 2;
         let gutterWidth = 0;
         try {
-            let src = cv.imread(img);
+            let src = cv.imread(canvas);
             let gray = new cv.Mat();
             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-            let scanW = img.width * 0.2;
-            let startX = Math.max(0, Math.min((lockedX || img.width * 0.5) - (scanW/2), img.width - scanW));
-            let roi = gray.roi(new cv.Rect(startX, 0, scanW, img.height));
+            let scanW = src.cols * 0.2;
+            let startX = Math.max(0, Math.min((lockedX || src.cols * 0.5) - (scanW/2), src.cols - scanW));
+            let roi = gray.roi(new cv.Rect(startX, 0, scanW, src.rows));
             cv.threshold(roi, roi, threshVal, 255, cv.THRESH_BINARY_INV);
             let colSums = [];
             for (let x = 0; x < roi.cols; x++) {
@@ -280,24 +271,32 @@
 
     downloadBtn.onclick = async () => {
         const zip = new JSZip();
-        status.innerText = `📦 Exporting ${currentFolderName}_SPLIT.zip...`;
+        status.innerText = "📦 Exporting high-res images...";
         for (const item of originalImages) {
-            await addHalfToZip(zip, item.img, 0, item.centerX - (item.gutterWidth/2), `${item.name.split('.')[0]}_A.jpg`);
-            await addHalfToZip(zip, item.img, item.centerX + (item.gutterWidth/2), item.img.width - (item.centerX + (item.gutterWidth/2)), `${item.name.split('.')[0]}_B.jpg`);
+            const canvas = document.getElementById(`c-${item.id}`);
+            const w = canvas.width;
+            const h = canvas.height;
+            const leftW = item.centerX - (item.gutterWidth/2);
+            const rightStart = item.centerX + (item.gutterWidth/2);
+            const rightW = w - rightStart;
+
+            await addCropToZip(zip, canvas, 0, leftW, `${item.name.split('.')[0]}_1.jpg`);
+            await addCropToZip(zip, canvas, rightStart, rightW, `${item.name.split('.')[0]}_2.jpg`);
         }
         const content = await zip.generateAsync({type: "blob"});
         const link = document.createElement('a');
         link.href = URL.createObjectURL(content);
         link.download = `${currentFolderName}_SPLIT.zip`;
         link.click();
-        status.innerText = "✅ ZIP Exported!";
+        status.innerText = "✅ Download Complete!";
     };
 
-    function addHalfToZip(zip, img, x, w, filename) {
+    function addCropToZip(zip, sourceCanvas, x, w, filename) {
         return new Promise(resolve => {
             const c = document.createElement('canvas');
-            c.width = w; c.height = img.height;
-            c.getContext('2d').drawImage(img, x, 0, w, img.height, 0, 0, w, img.height);
+            c.width = w; c.height = sourceCanvas.height;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(sourceCanvas, x, 0, w, c.height, 0, 0, w, c.height);
             c.toBlob(b => { zip.file(filename, b); resolve(); }, 'image/jpeg', 0.98);
         });
     }
