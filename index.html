@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Half-Frame Splitter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script async src="https://docs.opencv.org/4.5.4/opencv.js" id="opencv-script"></script>
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 2rem; color: #1e293b; line-height: 1.5; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        .status-bar { background: #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; border-left: 5px solid #94a3b8; }
+        .controls { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 2rem; display: flex; gap: 25px; align-items: flex-end; flex-wrap: wrap; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+        .card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .preview-container { position: relative; width: 100%; aspect-ratio: 3/2; background: #111; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-top: 10px; border-radius: 4px; }
+        canvas { max-width: 100%; max-height: 100%; }
+        .btn { background: var(--primary); color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        .btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+        .btn-alt { background: #0f172a; }
+        .slider-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: #64748b; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎞️ Half-Frame AI Splitter</h1>
+    <div id="status" class="status-bar">⌛ Loading Computer Vision Engine...</div>
+
+    <div class="controls">
+        <div class="slider-group">
+            <label>1. Upload Scans</label>
+            <input type="file" id="fileInput" multiple accept="image/*" disabled>
+        </div>
+        <div class="slider-group">
+            <label>2. Global Sensitivity: <span id="sensVal">45</span></label>
+            <input type="range" id="sensitivity" min="5" max="200" value="45">
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-alt" id="globalSyncBtn" disabled>🔄 Sync All</button>
+            <button class="btn" style="background: #ef4444;" id="resetBtn">🗑️ Reset</button>
+            <button class="btn" id="downloadAll" disabled>📥 Download (.ZIP)</button>
+        </div>
+    </div>
+
+    <div id="gallery" class="gallery"></div>
+</div>
+
+<script>
+let originalImages = []; 
+    const status = document.getElementById('status');
+    const fileInput = document.getElementById('fileInput');
+    const gallery = document.getElementById('gallery');
+    const downloadBtn = document.getElementById('downloadAll');
+    const globalSyncBtn = document.getElementById('globalSyncBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const sensInput = document.getElementById('sensitivity');
+    const sensVal = document.getElementById('sensVal');
+
+    // --- OPENCV LOAD ---
+    document.getElementById('opencv-script').onload = () => {
+        if (typeof cv !== 'undefined' && cv.runtimeInitialized) { onCvReady(); } 
+        else { cv.onRuntimeInitialized = onCvReady; }
+    };
+
+    function onCvReady() {
+        status.innerText = "✅ Ready. Manual overrides will lock the center position.";
+        status.style.background = "#dcfce7";
+        fileInput.disabled = false;
+    }
+
+    // --- RESET ---
+    resetBtn.onclick = () => {
+        originalImages = [];
+        gallery.innerHTML = '';
+        fileInput.value = '';
+        globalSyncBtn.disabled = true;
+        downloadBtn.disabled = true;
+        status.innerText = "Cleared. Upload new scans to begin.";
+    };
+
+    // --- UPLOAD HANDLER ---
+    fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        
+        status.innerText = "⌛ Processing Gallery...";
+        const globalThreshold = parseInt(sensInput.value);
+
+        for (const file of files) {
+            const img = await loadImage(file);
+            const res = autoDetectGutter(img, globalThreshold);
+            
+            const item = {
+                id: Math.random().toString(36).substr(2, 9),
+                img: img,
+                name: file.name,
+                threshold: globalThreshold,
+                centerX: res.centerX,
+                gutterWidth: res.gutterWidth,
+                isOverridden: false,
+                isCenterManuallySet: false // NEW FLAG
+            };
+            
+            originalImages.push(item);
+            renderCard(item);
+        }
+        
+        globalSyncBtn.disabled = false;
+        downloadBtn.disabled = false;
+        status.innerText = `✅ Loaded ${originalImages.length} images.`;
+    });
+
+    globalSyncBtn.onclick = () => {
+        const globalVal = parseInt(sensInput.value);
+        originalImages.forEach(item => {
+            if (!item.isOverridden) {
+                item.threshold = globalVal;
+                // If not overridden, we run a full fresh detection
+                const res = autoDetectGutter(item.img, globalVal);
+                item.centerX = res.centerX;
+                item.gutterWidth = res.gutterWidth;
+                item.refreshUI();
+            }
+        });
+    };
+
+    sensInput.oninput = (e) => sensVal.innerText = e.target.value;
+
+    // --- CLICK HANDLER ---
+    window.handleManualClick = (event, id) => {
+        const item = originalImages.find(i => i.id === id);
+        const rect = event.target.getBoundingClientRect();
+        const scaleX = item.img.width / rect.width;
+        const clickedX = (event.offsetX) * scaleX;
+
+        item.centerX = clickedX;
+        item.isOverridden = true;
+        item.isCenterManuallySet = true; // Lock the X coordinate
+        item.refreshUI();
+    };
+
+    // --- UI RENDERING ---
+    function renderCard(item) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.id = `card-${item.id}`;
+        gallery.appendChild(card);
+
+        item.refreshUI = () => {
+            card.innerHTML = '';
+            const header = document.createElement('div');
+            header.style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;";
+            header.innerHTML = `
+                <strong style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:180px;">${item.name}</strong>
+                <label style="font-size:10px; color:${item.isOverridden ? '#b45309' : '#64748b'}">
+                    <input type="checkbox" ${item.isOverridden ? 'checked' : ''} id="check-${item.id}"> LOCKED
+                </label>
+            `;
+            card.appendChild(header);
+
+            const pContainer = document.createElement('div');
+            pContainer.className = 'preview-container';
+            const canvas = document.createElement('canvas');
+            canvas.style.cursor = "crosshair";
+            canvas.width = item.img.width;
+            canvas.height = item.img.height;
+            pContainer.appendChild(canvas);
+            card.appendChild(pContainer);
+
+            const ctrlArea = document.createElement('div');
+            ctrlArea.style = `margin-top:10px; background:${item.isOverridden ? '#fefce8' : '#f8fafc'}; padding:8px; border-radius:4px; border: 1px solid ${item.isOverridden ? '#fde047' : '#e2e8f0'}`;
+            ctrlArea.innerHTML = `
+                <label style="font-size:10px;">Sensitivity: <b>${item.threshold}</b></label>
+                <input type="range" style="width:100%" min="5" max="200" value="${item.threshold}" id="slide-${item.id}">
+                <div style="font-size:9px; color:#94a3b8; margin-top:4px; text-align:center;">
+                    ${item.isCenterManuallySet ? '📍 Center Locked' : 'Click image to manual split'}
+                </div>
+            `;
+            card.appendChild(ctrlArea);
+
+            canvas.onclick = (e) => handleManualClick(e, item.id);
+            
+            card.querySelector(`#check-${item.id}`).onchange = (e) => {
+                item.isOverridden = e.target.checked;
+                if (!item.isOverridden) item.isCenterManuallySet = false;
+                item.refreshUI();
+            };
+
+            card.querySelector(`#slide-${item.id}`).oninput = (e) => {
+                item.threshold = parseInt(e.target.value);
+                item.isOverridden = true;
+                
+                // Pass current center if manually set to detect width only
+                const res = autoDetectGutter(item.img, item.threshold, item.isCenterManuallySet ? item.centerX : null);
+                
+                item.centerX = res.centerX;
+                item.gutterWidth = res.gutterWidth;
+                item.refreshUI();
+            };
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(item.img, 0, 0);
+            ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
+            ctx.fillRect(item.centerX - (item.gutterWidth/2), 0, item.gutterWidth, item.img.height);
+            ctx.strokeStyle = item.isOverridden ? "#eab308" : "#06b6d4";
+            ctx.lineWidth = Math.max(12, item.img.width / 150);
+            ctx.beginPath(); ctx.moveTo(item.centerX, 0); ctx.lineTo(item.centerX, item.img.height); ctx.stroke();
+        };
+
+        item.refreshUI();
+    }
+
+    // --- UPDATED AI HELPER ---
+    function autoDetectGutter(img, threshVal, lockedCenterX = null) {
+        let centerX = lockedCenterX !== null ? lockedCenterX : img.width / 2;
+        let gutterWidth = 0;
+
+        try {
+            let src = cv.imread(img);
+            let gray = new cv.Mat();
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+            
+            // Focus scanning on a local region around center
+            let scanWidth = img.width * 0.2;
+            let startX = lockedCenterX !== null ? (lockedCenterX - (scanWidth/2)) : (img.width * 0.4);
+            startX = Math.max(0, Math.min(startX, img.width - scanWidth));
+
+            let rect = new cv.Rect(startX, 0, scanWidth, img.height);
+            let roi = gray.roi(rect);
+            cv.threshold(roi, roi, threshVal, 255, cv.THRESH_BINARY_INV);
+
+            let colSums = [];
+            for (let x = 0; x < roi.cols; x++) {
+                let sum = 0;
+                for (let y = 0; y < roi.rows; y++) { if (roi.ucharAt(y, x) === 255) sum++; }
+                colSums.push(sum / roi.rows);
+            }
+
+            let startIdx = -1, endIdx = -1, maxRange = 0, currentStart = -1;
+            for(let i=0; i < colSums.length; i++) {
+                if(colSums[i] > 0.6) { if(currentStart === -1) currentStart = i; }
+                else {
+                    if(currentStart !== -1) {
+                        if((i - currentStart) > maxRange) { startIdx = currentStart; endIdx = i; maxRange = i - currentStart; }
+                        currentStart = -1;
+                    }
+                }
+            }
+
+            if (startIdx !== -1) {
+                // If center isn't locked, update the global center based on the strip found
+                if (lockedCenterX === null) {
+                    centerX = startX + ((startIdx + endIdx) / 2);
+                }
+                gutterWidth = (endIdx - startIdx) + 4;
+            }
+
+            src.delete(); gray.delete(); roi.delete();
+        } catch (e) { console.warn(e); }
+        
+        return { centerX, gutterWidth };
+    }
+
+    // --- ZIP & IMAGE HELPERS ---
+    function loadImage(file) {
+        return new Promise(res => {
+            const r = new FileReader();
+            r.onload = e => { const i = new Image(); i.onload = () => res(i); i.src = e.target.result; };
+            r.readAsDataURL(file);
+        });
+    }
+
+    downloadBtn.onclick = async () => {
+        const zip = new JSZip();
+        status.innerText = "📦 Creating high-res crops...";
+        for (const item of originalImages) {
+            await addHalfToZip(zip, item.img, 0, item.centerX - (item.gutterWidth/2), `${item.name.split('.')[0]}_A.jpg`);
+            await addHalfToZip(zip, item.img, item.centerX + (item.gutterWidth/2), item.img.width - (item.centerX + (item.gutterWidth/2)), `${item.name.split('.')[0]}_B.jpg`);
+        }
+        const content = await zip.generateAsync({type: "blob"});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = "half_frame_split.zip";
+        link.click();
+        status.innerText = "✅ Download ready!";
+    };
+
+    function addHalfToZip(zip, img, x, w, filename) {
+        return new Promise(resolve => {
+            const c = document.createElement('canvas');
+            c.width = w; c.height = img.height;
+            c.getContext('2d').drawImage(img, x, 0, w, img.height, 0, 0, w, img.height);
+            c.toBlob(b => { zip.file(filename, b); resolve(); }, 'image/jpeg', 0.95);
+        });
+    }
+</script>
+</body>
+</html>
